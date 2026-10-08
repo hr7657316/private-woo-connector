@@ -115,6 +115,15 @@ async def test_out_of_stock_products(woo):
     assert {p.sku for p in oos.items} >= {"TEA-NLG-100", "KIT-STR-BR"}
 
 
+async def test_customers(woo):
+    everyone = await resources.list_customers(woo, per_page=50)
+    assert everyone.total == 8
+    priya = await resources.search_customers(woo, "priya")
+    assert [c.email for c in priya.items] == ["priya.nair@example.com"]
+    one = await resources.get_customer(woo, priya.items[0].id)
+    assert (one.name, one.city, one.is_paying_customer) == ("Priya Nair", "Kochi", True)
+
+
 async def test_pagination_meta(woo):
     page1 = await resources.list_products(woo, per_page=4)
     assert page1.total_pages >= 4 and page1.has_more

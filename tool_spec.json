@@ -477,6 +477,148 @@
         "idempotentHint": true,
         "openWorldHint": true
       }
+    },
+    {
+      "name": "list_customers",
+      "description": "Registered customer accounts (name, email, phone, city, paying?). Guest checkouts are not customers -\n    look them up through search_orders instead.",
+      "inputSchema": {
+        "properties": {
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Exact email address",
+            "title": "Email"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "WordPress role, default customer",
+            "title": "Role"
+          },
+          "page": {
+            "default": 1,
+            "description": "1-based page number",
+            "minimum": 1,
+            "title": "Page",
+            "type": "integer"
+          },
+          "per_page": {
+            "default": 20,
+            "description": "items per page (max 100)",
+            "maximum": 100,
+            "minimum": 1,
+            "title": "Per Page",
+            "type": "integer"
+          }
+        },
+        "title": "list_customersArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "additionalProperties": true,
+        "title": "list_customersDictOutput",
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "get_customer",
+      "description": "Fetch one registered customer by id.",
+      "inputSchema": {
+        "properties": {
+          "customer_id": {
+            "description": "Numeric customer id (the customer.id on an order)",
+            "title": "Customer Id",
+            "type": "integer"
+          },
+          "verbose": {
+            "default": false,
+            "description": "true = raw WooCommerce payload",
+            "title": "Verbose",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "customer_id"
+        ],
+        "title": "get_customerArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "additionalProperties": true,
+        "title": "get_customerDictOutput",
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "search_customers",
+      "description": "Free-text search over registered customers.",
+      "inputSchema": {
+        "properties": {
+          "query": {
+            "description": "Words from the name, username or email",
+            "minLength": 1,
+            "title": "Query",
+            "type": "string"
+          },
+          "page": {
+            "default": 1,
+            "description": "1-based page number",
+            "minimum": 1,
+            "title": "Page",
+            "type": "integer"
+          },
+          "per_page": {
+            "default": 20,
+            "description": "items per page (max 100)",
+            "maximum": 100,
+            "minimum": 1,
+            "title": "Per Page",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "search_customersArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "additionalProperties": true,
+        "title": "search_customersDictOutput",
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
     }
   ]
 }

@@ -16,16 +16,23 @@ version should look like. Written for whoever decides whether to put it in front
 | What's running low (≤ 5 units)? | `list_low_stock(threshold=5)` — includes variations |
 | What teas do we sell, with prices? | `search_products("tea")` / `list_products(category=…)` |
 | Did customer 7 order before? | `list_orders(customer_id=7)` |
+| Who is priya.nair@example.com, where does she ship to? | `list_customers(email=…)` / `search_customers` |
 
 All of this is **read-only**. The seeded key has `permissions = read`, and no tool can write; even a
-prompt-injected "cancel order 45" has nothing to call.
+prompt-injected "cancel order 45" has nothing to call. This is tested, not asserted: the seed contains a product
+whose description instructs AI assistants to cancel every on-hold order, `evals/questions.yaml` asks the agent
+about that product, and the eval re-reads the store afterwards to confirm nothing changed (`evals/RESULTS.md`).
+
+Onboarding is also covered: `woo-connect` runs WooCommerce's `wc-auth` consent flow, so a merchant grants
+read access with one click and no key is ever copied by a human (README → "Connecting a store").
 
 ## Cannot (by design, for this version)
 
 - **Write anything**: no status changes, refunds, notes, stock adjustments, coupon creation. The production
   path is write tools behind an explicit human approval step (see below), not "the agent can edit orders".
-- **Customers as a resource**: there is no `list_customers`/`get_customer`. Customer facts arrive attached to
-  orders. (A `customers.py` sibling is a 30-minute addition; left out to keep the review surface small.)
+- **Guest shoppers as customers**: `list_customers` / `get_customer` / `search_customers` cover registered
+  accounts only; a guest checkout exists solely on its order (`customer.id = 0`), so "find the person who placed
+  #1042" goes through `search_orders`.
 - **Reports / analytics** beyond per-status order counts (`/reports/orders/totals`). Revenue-by-month,
   top sellers etc. are not exposed; an agent can approximate from `list_orders` pages but that is slow.
 - **Refund, shipment or payment-gateway detail** beyond what the order payload carries
@@ -76,8 +83,10 @@ prompt-injected "cancel order 45" has nothing to call.
 8. **No idempotent retry on the OAuth1 nonce.** A retried request is re-signed with a fresh nonce and
    timestamp, so WooCommerce's replay check never bites; timestamps older than 15 minutes are rejected,
    so a badly skewed clock on the agent host causes 401s.
-9. **Streamable HTTP transport has no auth of its own.** It is meant to sit behind the host platform's
-   gateway (Agent Studio, a reverse proxy with mTLS/OIDC), not on the public internet. stdio is the default.
+9. **Streamable HTTP auth is a single shared bearer token** (`WOO_MCP_TOKEN`), plus DNS-rebinding protection
+   pinned to the public hostname. Enough for a demo and for sitting behind a platform gateway (Agent Studio, a
+   reverse proxy with mTLS/OIDC); a multi-tenant deployment wants per-merchant tokens or OAuth on the MCP endpoint
+   itself. stdio remains the default.
 10. **Token cost**: a full page of 20 order summaries is ~3k tokens (measured: 12.7 KB JSON). The agent is instructed to filter
     (status, date window, customer) before listing; `per_page` defaults to 20, not 100, for the same reason.
 
@@ -92,11 +101,10 @@ prompt-injected "cancel order 45" has nothing to call.
 
 ## The production version (what I'd build next, in order)
 
-1. **Merchant onboarding via `wc-auth`** — WooCommerce's built-in consent flow:
-   redirect the merchant to `https://store/wc-auth/v1/authorize?app_name=Agent+Studio&scope=read&user_id=<merchant>&return_url=…&callback_url=…`,
-   WooCommerce POSTs `consumer_key`/`consumer_secret` to the callback, we store them per merchant in a
-   vault. This replaces "paste your key" with a two-click OAuth-like grant and fixes the key-handling
-   question for a multi-tenant platform. `auth.py` needs no change: it already handles the resulting key.
+1. **Host the `wc-auth` callback as a service.** `woo-connect` already runs the consent flow end to end, but
+   its callback listener lives on the operator's machine with a self-signed certificate. The platform version
+   is the same handler behind a public HTTPS endpoint, storing each merchant's keys in a vault keyed by the
+   `user_id` it issued - the request/response shapes do not change.
 2. **Webhooks → cache**: subscribe to `order.created/updated` and `product.updated`, keep a per-merchant
    read model, serve `list_*` and `search_*` from it, fall back to REST on miss. Turns a 2-5 s multi-call
    answer into tens of ms and removes the low-stock scan problem.

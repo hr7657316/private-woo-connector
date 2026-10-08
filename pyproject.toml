@@ -16,10 +16,12 @@ dependencies = [
 demo = [
     "groq>=1.7.0",
     "pydantic-ai>=2.54.0",
+    "pyyaml>=6.0.3",
 ]
 
 [project.scripts]
 woo-mcp = "woo_connector.mcp_server:main"
+woo-connect = "woo_connector.connect:main"
 
 [dependency-groups]
 dev = [

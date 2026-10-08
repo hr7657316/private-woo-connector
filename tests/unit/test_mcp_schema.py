@@ -20,6 +20,9 @@ EXPECTED_TOOLS = {
     "search_products",
     "get_stock",
     "list_low_stock",
+    "list_customers",
+    "get_customer",
+    "search_customers",
 }
 
 
@@ -80,6 +83,32 @@ async def test_invalid_arguments_are_rejected_before_any_http(configured):
     async with Client(server) as client:
         result = await client.call_tool("list_orders", {"per_page": 500})
     assert result.is_error is True
+
+
+@respx.mock
+async def test_session_call_budget_is_enforced(configured, monkeypatch, sample_order):
+    monkeypatch.setenv("WOO_MAX_CALLS_PER_SESSION", "1")
+    await mcp_server.reset_client()
+    respx.get("https://shop.example.com/wp-json/wc/v3/orders/1042").mock(
+        return_value=httpx.Response(200, json=sample_order, headers={"Content-Type": "application/json"})
+    )
+    async with Client(server) as client:
+        first = await client.call_tool("get_order", {"order_id": 1042})
+        second = await client.call_tool("get_order", {"order_id": 1042})
+    assert first.is_error is False
+    assert second.is_error is True and "budget of 1 tool calls" in second.content[0].text
+
+
+@respx.mock
+async def test_each_call_emits_a_structured_log_line(configured, sample_order, caplog):
+    respx.get("https://shop.example.com/wp-json/wc/v3/orders/1042").mock(
+        return_value=httpx.Response(200, json=sample_order, headers={"Content-Type": "application/json"})
+    )
+    with caplog.at_level("INFO", logger="woo_connector"):
+        async with Client(server) as client:
+            await client.call_tool("get_order", {"order_id": 1042})
+    records = [json.loads(r.message) for r in caplog.records if r.message.startswith("{")]
+    assert records and records[-1]["tool"] == "get_order" and records[-1]["ok"] is True and "ms" in records[-1]
 
 
 async def test_missing_configuration_is_explained(monkeypatch):

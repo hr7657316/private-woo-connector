@@ -6,7 +6,6 @@
     MODEL=google:gemini-3.8-flash      GOOGLE_API_KEY=...     uv run --extra demo demo/agent.py "..."
 
 Model IDs verified 2026-10-08; see README "Ask an LLM" for the per-vendor catalogue links.
-
 API keys may also be placed in the repo's .env (git-ignored) instead of the shell.
 
 The script launches `woo-mcp` over stdio exactly like Claude Desktop / Codex / Gemini CLI would,
@@ -22,62 +21,26 @@ import os
 import sys
 from pathlib import Path
 
-from dotenv import load_dotenv
-from pydantic_ai import Agent
-from pydantic_ai.mcp import MCPToolset, StdioTransport
-from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, ToolCallPart, ToolReturnPart
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from runner import DEFAULT_MODEL, ask  # noqa: E402
 
-ROOT = Path(__file__).resolve().parent.parent
-load_dotenv(ROOT / ".env")  # provider API keys can live next to the WOO_* settings (git-ignored)
-os.environ.setdefault("PYDANTIC_AI_NO_BANNER", "1")
-
-DEFAULT_MODEL = "groq:openai/gpt-oss-120b"
 DEFAULT_QUESTION = "Which orders are on hold, and what is their combined total?"
-
-INSTRUCTIONS = """\
-You are an operations analyst for a WooCommerce store. Answer only from the tools - never invent
-order numbers, totals or stock counts. Quote order numbers (#1234) and SKUs. Money is in the store
-currency returned by the tools. When a list is paginated (has_more=true), fetch further pages
-before summarising. Be concise."""
 
 
 def main() -> None:
     model = os.environ.get("MODEL", DEFAULT_MODEL)
     question = " ".join(sys.argv[1:]).strip() or DEFAULT_QUESTION
-
-    toolset = MCPToolset(
-        StdioTransport("uv", ["run", "woo-mcp"], cwd=str(ROOT)),
-        include_instructions=True,  # the server's own usage notes reach the model too
-    )
-    agent = Agent(model, instructions=INSTRUCTIONS, toolsets=[toolset])
-
     print(f"model     {model}\nquestion  {question}\n")
-    result = asyncio.run(_run(agent, question))
 
-    for message in result.all_messages():
-        if isinstance(message, ModelResponse):
-            for part in message.parts:
-                if isinstance(part, ToolCallPart):
-                    print(f"→ {part.tool_name}({json.dumps(part.args_as_dict(), ensure_ascii=False)})")
-        elif isinstance(message, ModelRequest):
-            for part in message.parts:
-                if isinstance(part, ToolReturnPart):
-                    print(f"← {part.tool_name}: {_brief(part.content)}")
+    run = asyncio.run(ask(model, question))
+    if run.error:
+        sys.exit(f"failed after {run.seconds:.1f}s: {run.error}")
 
-    answer = "".join(p.content for p in result.response.parts if isinstance(p, TextPart)).strip()
-    print(f"\nanswer\n{answer}\n")
-    usage = result.usage
-    print(f"usage     {usage.requests} model request(s), {usage.input_tokens} in / {usage.output_tokens} out tokens")
-
-
-async def _run(agent: Agent, question: str):
-    async with agent:  # starts the MCP subprocess; stopped on exit
-        return await agent.run(question)
-
-
-def _brief(content: object, limit: int = 160) -> str:
-    text = content if isinstance(content, str) else json.dumps(content, ensure_ascii=False, default=str)
-    return text if len(text) <= limit else text[:limit] + f"… ({len(text)} chars)"
+    for call in run.tool_calls:
+        print(f"→ {call.name}({json.dumps(call.args, ensure_ascii=False)})")
+        print(f"← {call.name}: {call.result_preview}")
+    print(f"\nanswer\n{run.answer}\n")
+    print(f"usage     {run.requests} model request(s), {run.input_tokens} in / {run.output_tokens} out tokens, {run.seconds:.1f}s")
 
 
 if __name__ == "__main__":

@@ -10,8 +10,10 @@ Run:  ``woo-mcp``  or  ``woo-mcp --transport streamable-http --port 8765``
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sys
+import time
 from collections.abc import Awaitable, Callable
 from typing import Annotated, Any, TypeVar
 
@@ -57,22 +59,43 @@ async def get_client() -> WooClient:
 
 
 async def reset_client() -> None:
-    global _client
+    global _client, _calls_made
     if _client is not None:
         await _client.aclose()
     _client = None
+    _calls_made = 0
 
 
 T = TypeVar("T")
 
+_calls_made = 0
+
 
 async def _call(fn: Callable[..., Awaitable[T]], **kwargs: Any) -> T:
-    """Run a primitive and translate connector errors into ToolErrors the model can act on."""
+    """Run a primitive and translate connector errors into ToolErrors the model can act on.
+
+    Every call emits one structured log line (stderr, JSON) - tool, latency, outcome, upstream status -
+    and counts against WOO_MAX_CALLS_PER_SESSION so a looping agent cannot exhaust a merchant's PHP workers.
+    """
+    global _calls_made
     woo = await get_client()
+    budget = woo.settings.woo_max_calls_per_session
+    if budget and _calls_made >= budget:
+        raise ToolError(
+            f"this session's budget of {budget} tool calls is used up; start a new session or raise WOO_MAX_CALLS_PER_SESSION"
+        )
+    _calls_made += 1
+    started = time.perf_counter()
+    record: dict[str, Any] = {"event": "tool_call", "tool": fn.__name__, "call": _calls_made}
     try:
-        return await fn(woo, **kwargs)
+        result = await fn(woo, **kwargs)
     except WooError as exc:
+        record |= {"ok": False, "status": exc.status, "code": exc.code, "ms": round((time.perf_counter() - started) * 1000)}
+        log.info(json.dumps(record))
         raise ToolError(str(exc)) from exc
+    record |= {"ok": True, "ms": round((time.perf_counter() - started) * 1000)}
+    log.info(json.dumps(record))
+    return result
 
 
 def _dump(result: Any) -> Any:
@@ -205,7 +228,74 @@ async def list_low_stock(
     return [s.model_dump() for s in await _call(resources.list_low_stock, threshold=threshold, limit=limit)]
 
 
+# -- customers ------------------------------------------------------------------------------
+
+
+@server.tool(annotations=READ_ONLY)
+async def list_customers(
+    email: Annotated[str | None, Field(description="Exact email address")] = None,
+    role: Annotated[str | None, Field(description="WordPress role, default customer")] = None,
+    page: Pagination = 1,
+    per_page: PerPage = 20,
+) -> dict[str, Any]:
+    """Registered customer accounts (name, email, phone, city, paying?). Guest checkouts are not customers -
+    look them up through search_orders instead."""
+    return _dump(await _call(resources.list_customers, email=email, role=role, page=page, per_page=per_page))
+
+
+@server.tool(annotations=READ_ONLY)
+async def get_customer(
+    customer_id: Annotated[int, Field(description="Numeric customer id (the customer.id on an order)")],
+    verbose: Annotated[bool, Field(description="true = raw WooCommerce payload")] = False,
+) -> dict[str, Any]:
+    """Fetch one registered customer by id."""
+    return _dump(await _call(resources.get_customer, customer_id=customer_id, verbose=verbose))
+
+
+@server.tool(annotations=READ_ONLY)
+async def search_customers(
+    query: Annotated[str, Field(min_length=1, description="Words from the name, username or email")],
+    page: Pagination = 1,
+    per_page: PerPage = 20,
+) -> dict[str, Any]:
+    """Free-text search over registered customers."""
+    return _dump(await _call(resources.search_customers, query=query, page=page, per_page=per_page))
+
+
 # -- entry point ----------------------------------------------------------------------------
+
+
+def build_http_app(*, allowed_hosts: list[str], bearer_token: str | None):
+    """Starlette app for Streamable HTTP: MCP at /mcp, unauthenticated GET /healthz for platform probes.
+
+    ``allowed_hosts`` feeds the SDK's DNS-rebinding protection (``*`` disables it - fine behind a platform
+    proxy, never on a bare host). ``bearer_token`` is the one piece of auth the SDK does not do for us: when
+    set, every request except /healthz must carry ``Authorization: Bearer <token>``.
+    """
+    from mcp.server.transport_security import TransportSecuritySettings
+    from starlette.responses import JSONResponse, PlainTextResponse
+
+    if "*" in allowed_hosts:
+        security = TransportSecuritySettings(enable_dns_rebinding_protection=False)
+    else:
+        # The SDK compares the raw Host header; accept each name with or without a port ("host:*").
+        security = TransportSecuritySettings(allowed_hosts=[h for host in allowed_hosts for h in (host, f"{host}:*")])
+    inner = server.streamable_http_app(transport_security=security)
+    expected = f"Bearer {bearer_token}".encode() if bearer_token else None
+
+    async def app(scope, receive, send):
+        if scope["type"] == "http":
+            if scope["path"] == "/healthz":
+                return await PlainTextResponse("ok")(scope, receive, send)
+            if expected is not None:
+                supplied = dict(scope["headers"]).get(b"authorization", b"")
+                if supplied != expected:
+                    return await JSONResponse({"error": "unauthorized", "hint": "send Authorization: Bearer <WOO_MCP_TOKEN>"}, 401)(
+                        scope, receive, send
+                    )
+        await inner(scope, receive, send)
+
+    return app
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -213,6 +303,11 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--transport", choices=["stdio", "streamable-http"], default="stdio")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument(
+        "--allowed-hosts",
+        default="127.0.0.1,localhost",
+        help="comma-separated Host values accepted over HTTP (DNS-rebinding protection); '*' disables the check",
+    )
     args = parser.parse_args(argv)
 
     # stdout is the MCP channel on stdio; everything else must go to stderr.
@@ -226,8 +321,18 @@ def main(argv: list[str] | None = None) -> None:
 
     if args.transport == "stdio":
         server.run("stdio")
-    else:
-        server.run("streamable-http", host=args.host, port=args.port)
+        return
+
+    import os
+
+    import uvicorn
+
+    token = os.environ.get("WOO_MCP_TOKEN") or None
+    hosts = [h.strip() for h in args.allowed_hosts.split(",") if h.strip()]
+    log.info("streamable-http on %s:%s path=/mcp auth=%s allowed_hosts=%s", args.host, args.port, "bearer" if token else "none", hosts)
+    if not token and args.host not in ("127.0.0.1", "localhost"):
+        log.warning("serving on %s without WOO_MCP_TOKEN - anyone who can reach this port can read the store", args.host)
+    uvicorn.run(build_http_app(allowed_hosts=hosts, bearer_token=token), host=args.host, port=args.port, log_level="info")
 
 
 if __name__ == "__main__":

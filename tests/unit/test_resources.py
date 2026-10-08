@@ -154,6 +154,46 @@ async def test_list_low_stock_scans_products_and_variations(woo, sample_product)
     assert items[0].type == "variation"
 
 
+# -- customers ------------------------------------------------------------------------------
+
+CUSTOMER = {
+    "id": 7,
+    "date_created": "2026-09-01T10:00:00",
+    "date_created_gmt": "2026-09-01T04:30:00",
+    "email": "priya.nair@example.com",
+    "first_name": "Priya",
+    "last_name": "Nair",
+    "role": "customer",
+    "username": "priya",
+    "is_paying_customer": True,
+    "billing": {"city": "Kochi", "phone": "9800000001", "country": "IN"},
+    "shipping": {"city": "Kochi", "country": "IN"},
+    "avatar_url": "https://example.com/a.png",
+    "meta_data": [],
+}
+
+
+@respx.mock
+async def test_list_customers_by_email(woo):
+    route = respx.get(f"{API}/customers").mock(return_value=ok([CUSTOMER], **{"X-WP-Total": "1", "X-WP-TotalPages": "1"}))
+    page = await resources.list_customers(woo, email=" priya.nair@example.com ")
+    assert route.calls.last.request.url.params["email"] == "priya.nair@example.com"
+    customer = page.items[0]
+    assert (customer.name, customer.phone, customer.city, customer.is_paying_customer) == ("Priya Nair", "9800000001", "Kochi", True)
+    assert customer.date_created == "2026-09-01T04:30:00"
+    assert "avatar_url" not in customer.model_dump()
+
+
+@respx.mock
+async def test_get_customer_and_search(woo):
+    respx.get(f"{API}/customers/7").mock(return_value=ok(CUSTOMER))
+    route = respx.get(f"{API}/customers").mock(return_value=ok([CUSTOMER]))
+    assert (await resources.get_customer(woo, 7)).email == "priya.nair@example.com"
+    assert (await resources.get_customer(woo, 7, verbose=True))["username"] == "priya"
+    await resources.search_customers(woo, "nair")
+    assert route.calls.last.request.url.params["search"] == "nair"
+
+
 @respx.mock
 async def test_list_low_stock_respects_limit(woo, sample_product):
     products = [{**sample_product, "id": i, "stock_quantity": 1} for i in range(1, 6)]

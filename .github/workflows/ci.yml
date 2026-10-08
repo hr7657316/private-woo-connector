@@ -1,0 +1,46 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  unit:
+    name: unit tests (no network)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --all-extras
+      - run: uv run pytest tests/unit -q
+      - name: tool spec is up to date
+        run: |
+          uv run scripts/export_tool_spec.py
+          git diff --exit-code tool_spec.json
+
+  live:
+    name: live store (Docker WooCommerce)
+    runs-on: ubuntu-latest
+    needs: unit
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --all-extras
+      - name: start and seed WooCommerce
+        run: |
+          docker compose -f docker/docker-compose.yml up -d
+          for i in $(seq 1 90); do
+            status=$(docker inspect -f '{{.State.Status}} {{.State.ExitCode}}' woo-connector-seed-1 2>/dev/null || echo missing)
+            case "$status" in exited*) break;; esac
+            sleep 5
+          done
+          docker compose -f docker/docker-compose.yml logs --no-log-prefix seed | tail -20
+          test "$(docker inspect -f '{{.State.ExitCode}}' woo-connector-seed-1)" = "0"
+      - run: cp .env.example .env
+      - run: uv run pytest tests/integration -q
+      - run: uv run scripts/smoke.py
+      - if: always()
+        run: docker compose -f docker/docker-compose.yml down -v

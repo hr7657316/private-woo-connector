@@ -11,6 +11,8 @@ currency code travels alongside it.
 
 from __future__ import annotations
 
+import html
+import re
 from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel, Field
@@ -113,6 +115,7 @@ class ProductSummary(BaseModel):
     categories: list[str] = []
     variation_ids: list[int] = []
     permalink: str = ""
+    description: str = Field("", description="merchant-written description, HTML stripped, truncated to 300 chars")
 
     @classmethod
     def from_wc(cls, d: dict[str, Any]) -> ProductSummary:
@@ -133,6 +136,7 @@ class ProductSummary(BaseModel):
             categories=[c.get("name", "") for c in d.get("categories", [])],
             variation_ids=list(d.get("variations", []) or []),
             permalink=d.get("permalink", ""),
+            description=strip_html(d.get("short_description") or d.get("description") or ""),
         )
 
 
@@ -162,10 +166,48 @@ class StockInfo(BaseModel):
         )
 
 
+class CustomerSummary(BaseModel):
+    id: int
+    name: str
+    email: str
+    username: str = ""
+    role: str = "customer"
+    date_created: str = Field("", description="ISO-8601, UTC")
+    is_paying_customer: bool = False
+    phone: str = ""
+    city: str = ""
+    country: str = ""
+
+    @classmethod
+    def from_wc(cls, d: dict[str, Any]) -> CustomerSummary:
+        billing = d.get("billing") or {}
+        shipping = d.get("shipping") or {}
+        name = " ".join(p for p in (d.get("first_name"), d.get("last_name")) if p).strip() or d.get("username", "")
+        return cls(
+            id=d["id"],
+            name=name,
+            email=d.get("email") or billing.get("email") or "",
+            username=d.get("username") or "",
+            role=d.get("role") or "customer",
+            date_created=d.get("date_created_gmt") or d.get("date_created") or "",
+            is_paying_customer=bool(d.get("is_paying_customer", False)),
+            phone=billing.get("phone") or "",
+            city=shipping.get("city") or billing.get("city") or "",
+            country=shipping.get("country") or billing.get("country") or "",
+        )
+
+
 class OrderStatusTotal(BaseModel):
     slug: str
     name: str
     total: int
+
+
+def strip_html(value: str, limit: int = 300) -> str:
+    """Product descriptions are merchant-authored HTML - untrusted content. Flatten to plain text."""
+    text = html.unescape(re.sub(r"<[^>]+>", " ", value))
+    text = re.sub(r"\s+", " ", text).strip()
+    return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
 
 
 def _int_or_none(value: Any) -> int | None:

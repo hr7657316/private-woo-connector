@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     woo_burst: int = Field(10, ge=1, description="Token-bucket capacity (short bursts above the rps)")
     woo_timeout: float = Field(15.0, gt=0, description="Per-request timeout in seconds")
     woo_max_retries: int = Field(4, ge=0, description="Retries on 429 / 5xx / network errors (GETs only)")
+    woo_max_calls_per_session: int = Field(
+        0, ge=0, description="Tool calls one MCP server process may make before refusing (0 = unlimited); caps runaway agents"
+    )
 
     @field_validator("woo_base_url")
     @classmethod

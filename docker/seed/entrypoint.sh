@@ -35,6 +35,9 @@ wp option update woocommerce_coming_soon no >/dev/null          # WC 9.1+ "comin
 wp option update woocommerce_manage_stock yes >/dev/null || true
 wp option update woocommerce_notify_low_stock_amount 5 >/dev/null || true
 
+echo "[seed] installing dev-only helpers for the wc-auth consent flow (see docker/seed/mu-plugins)"
+mkdir -p wp-content/mu-plugins && cp /seed/mu-plugins/*.php wp-content/mu-plugins/
+
 echo "[seed] seeding products, orders and the demo API key"
 wp eval-file /seed/seed.php
 

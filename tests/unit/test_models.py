@@ -40,7 +40,14 @@ def test_product_summary(sample_product):
     assert product.stock_quantity == 3
     assert product.low_stock_amount == 5
     assert product.categories == ["Beverages"]
-    assert "description" not in product.model_dump()
+    assert product.description == "long html"  # HTML stripped
+
+
+def test_product_description_is_flattened_and_capped(sample_product):
+    noisy = {**sample_product, "short_description": "", "description": "<p>Hello&nbsp;<b>world</b></p>\n<ul><li>" + "x" * 400 + "</li></ul>"}
+    description = ProductSummary.from_wc(noisy).description
+    assert description.startswith("Hello world x")
+    assert "<" not in description and len(description) <= 300
 
 
 def test_stock_info_handles_untracked_stock(sample_product):
