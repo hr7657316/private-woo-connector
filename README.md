@@ -294,13 +294,14 @@ Streamable HTTP, behind a bearer token.
 
 | | URL |
 |---|---|
-| Store (wp-admin `admin` / `admin`) | https://store-production-47c9.up.railway.app |
+| Store (wp-admin `admin`, password shared out-of-band) | https://store-production-47c9.up.railway.app |
 | MCP endpoint | `https://woo-mcp-production-1b5f.up.railway.app/mcp` + header `Authorization: Bearer <token>` |
 | Health | https://woo-mcp-production-1b5f.up.railway.app/healthz |
 
 The token is shared out-of-band (it is in the application form, not in this repo). Hosts that take a remote MCP URL
 (Claude, Cursor, Codex `mcp_servers` with `url`, pydantic-ai `MCPToolset("https://…/mcp", headers=…)`) point at it
 directly; stdio-only hosts can bridge with `npx mcp-remote <url> --header "Authorization: Bearer <token>"`.
+Snippets for each: [`demo/hosts/remote_http.md`](demo/hosts/remote_http.md).
 
 How it is built: [`deploy/wordpress/Dockerfile`](deploy/wordpress/Dockerfile) wraps the official image with wp-cli
 and runs the same idempotent seed on first boot (hosts don't share volumes between services the way compose does);

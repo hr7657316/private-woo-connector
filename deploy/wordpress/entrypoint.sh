@@ -35,6 +35,13 @@ ${WORDPRESS_CONFIG_EXTRA:-}
   export SITE_URL WP_CLI_CACHE_DIR=/tmp/wp-cli-cache
   sed -i "s#^SITE_URL=.*#SITE_URL=\"${SITE_URL}\"#" /seed/entrypoint.sh
   su -s /bin/bash www-data -c "bash /seed/entrypoint.sh" || echo "[seed-and-serve] seed failed (see above); store is up but unseeded"
+  # The seed's admin/admin is for laptops. On a public URL, take the password from the environment.
+  if [ -n "${WP_ADMIN_PASSWORD:-}" ]; then
+    su -s /bin/bash www-data -c "wp user update admin --user_pass='${WP_ADMIN_PASSWORD}' --skip-email" >/dev/null \
+      && echo "[seed-and-serve] admin password set from WP_ADMIN_PASSWORD"
+  else
+    echo "[seed-and-serve] WARNING: WP_ADMIN_PASSWORD not set - wp-admin is admin/admin on a public host"
+  fi
 ) &
 
 exec docker-entrypoint.sh apache2-foreground

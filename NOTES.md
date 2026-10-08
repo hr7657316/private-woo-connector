@@ -36,6 +36,17 @@ Kept short on purpose - the kind of thing I'd put in a hand-over.
    callback on a self-signed cert; the demo store carries a 20-line mu-plugin that relaxes exactly those checks
    for `host.docker.internal`. A production connector hosts a public HTTPS callback and needs none of it.
 
+8. **Railway's runtime enables two Apache MPMs.** The same `wordpress:php8.3-apache` image boots locally with only
+   `mpm_prefork`; on Railway it dies with *AH00534: More than one MPM loaded*. Known platform quirk; the hosted
+   entrypoint deletes the extra MPM before starting Apache.
+
+9. **`wp db check` needs the `mysql` client binary.** The compose seed ran in `wordpress:cli`, which ships it; the
+   apache image does not, so the hosted store's "wait for the database" loop never ended and the site sat on the
+   WordPress install wizard. `apt-get install mariadb-client` in the hosted image.
+
+10. **`admin/admin` is a laptop default, not a hosted one.** On a public URL the seed's admin password is replaced
+    from `WP_ADMIN_PASSWORD`; the hosted entrypoint warns loudly if it is missing.
+
 ## Decisions
 
 - **Read-only is the blast-radius control, not a limitation.** The injection canary in the seed asks the agent to
