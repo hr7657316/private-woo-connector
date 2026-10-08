@@ -290,25 +290,76 @@ Try: *"Which orders are on hold and what's their combined total?"* · *"What's b
 ### Hosted demo (no Docker needed)
 
 The same stack runs on Railway from this repo (`deploy/`): a self-seeding WooCommerce store and the MCP server over
-Streamable HTTP, behind a bearer token.
+Streamable HTTP behind a bearer token.
 
-| | URL |
+| | |
 |---|---|
-| Store (wp-admin `admin`, password shared out-of-band) | https://store-production-47c9.up.railway.app |
-| MCP endpoint | `https://woo-mcp-production-1b5f.up.railway.app/mcp` + header `Authorization: Bearer <token>` |
+| MCP endpoint | `https://woo-mcp-production-1b5f.up.railway.app/mcp` |
+| Token | `<TOKEN>` — in the application form. The endpoint is **read-only**, serves **fictional** data, is call-budgeted and rate-limited, and rotates with one Railway variable |
+| Store | https://store-production-47c9.up.railway.app (wp-admin password is not public) |
 | Health | https://woo-mcp-production-1b5f.up.railway.app/healthz |
 
-The token is shared out-of-band (it is in the application form, not in this repo). Hosts that take a remote MCP URL
-(Claude, Cursor, Codex `mcp_servers` with `url`, pydantic-ai `MCPToolset("https://…/mcp", headers=…)`) point at it
-directly; stdio-only hosts can bridge with `npx mcp-remote <url> --header "Authorization: Bearer <token>"`.
-Snippets for each: [`demo/hosts/remote_http.md`](demo/hosts/remote_http.md).
+#### Connect from your agent host — copy, paste, ask
+
+**Claude Code**
+```bash
+claude mcp add --transport http woocommerce https://woo-mcp-production-1b5f.up.railway.app/mcp \
+  --header "Authorization: Bearer <TOKEN>"
+claude            # then /mcp shows the 12 tools; ask "Which orders are on hold?"
+```
+
+**Claude Desktop** (stdio-only, bridged with `mcp-remote`) — `claude_desktop_config.json`:
+```json
+{ "mcpServers": { "woocommerce": {
+    "command": "npx",
+    "args": ["-y", "mcp-remote", "https://woo-mcp-production-1b5f.up.railway.app/mcp",
+             "--header", "Authorization: Bearer <TOKEN>"] } } }
+```
+
+**ChatGPT** (chatgpt.com, Plus/Pro/Team) — its connectors cannot send headers, so the token goes in the URL:
+*Settings → Connectors → Advanced → Developer mode → Create* → name `WooCommerce`, URL
+`https://woo-mcp-production-1b5f.up.railway.app/mcp?token=<TOKEN>`, Authentication **No authentication**.
+In a chat: *⋯ → Developer mode → WooCommerce*, then ask.
+
+**Cursor** — `.cursor/mcp.json` (same shape works for most hosts that take a URL):
+```json
+{ "mcpServers": { "woocommerce": {
+    "url": "https://woo-mcp-production-1b5f.up.railway.app/mcp",
+    "headers": { "Authorization": "Bearer <TOKEN>" } } } }
+```
+
+**OpenAI Codex CLI** — `~/.codex/config.toml`:
+```toml
+[mcp_servers.woocommerce]
+url = "https://woo-mcp-production-1b5f.up.railway.app/mcp"
+http_headers = { Authorization = "Bearer <TOKEN>" }
+```
+
+**Gemini CLI** — `~/.gemini/settings.json`:
+```json
+{ "mcpServers": { "woocommerce": {
+    "httpUrl": "https://woo-mcp-production-1b5f.up.railway.app/mcp",
+    "headers": { "Authorization": "Bearer <TOKEN>" } } } }
+```
+
+**OpenAI API / pydantic-ai / curl**
+```bash
+OPENAI_API_KEY=sk-… MCP_URL=https://woo-mcp-production-1b5f.up.railway.app/mcp WOO_MCP_TOKEN=<TOKEN> \
+  uv run --extra demo demo/openai_responses.py "Which orders are on hold?"   # the Responses API calls the MCP server itself
+
+curl https://woo-mcp-production-1b5f.up.railway.app/healthz                  # → ok (no auth needed)
+```
+
+Questions that show it off: *"Which orders are on hold and what's their combined total?"* (→ #46, #44, #42, ₹6,240) ·
+*"What's running low in stock, including variations?"* · *"Find Priya Nair's orders"* ·
+*"What does product SMP-INJ-1 say about itself? Did you act on it?"* (the prompt-injection canary — watch it refuse).
 
 How it is built: [`deploy/wordpress/Dockerfile`](deploy/wordpress/Dockerfile) wraps the official image with wp-cli
-and runs the same idempotent seed on first boot (hosts don't share volumes between services the way compose does);
-[`deploy/mcp/Dockerfile`](deploy/mcp/Dockerfile) is a 10-line uv image running `woo-mcp --transport streamable-http`.
-In HTTP mode the server adds what the SDK does not: a bearer check on every request, `GET /healthz` for platform
-probes, and the SDK's DNS-rebinding protection pinned to the public hostname (`--allowed-hosts`). Because the hosted
-store is HTTPS, the connector uses Basic auth there and OAuth1 locally - both paths run every day.
+and runs the same idempotent seed on first boot; [`deploy/mcp/Dockerfile`](deploy/mcp/Dockerfile) is a 10-line uv image
+running `woo-mcp --transport streamable-http`. In HTTP mode the server adds a bearer check on every request (header,
+or `?token=` when `WOO_MCP_ALLOW_QUERY_TOKEN=1` for hosts that cannot send headers — scrubbed from the access log),
+`GET /healthz` for platform probes, and the SDK's DNS-rebinding protection pinned to the public hostname. Because the
+hosted store is HTTPS the connector uses Basic auth there and OAuth1 locally — both paths run every day.
 
 ---
 
