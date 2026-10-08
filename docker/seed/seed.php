@@ -159,7 +159,14 @@ foreach ( $people as $key => list( $first, $last, $email ) ) {
 	$c = new WC_Customer( $id );
 	$c->set_first_name( $first );
 	$c->set_last_name( $last );
-	$c->set_props( array( 'billing' => demo_address( $people[ $key ] ), 'shipping' => demo_address( $people[ $key ] ) ) );
+	// WC_Customer has per-field setters (set_billing_city...), not a set_billing(); set_props() with a nested
+	// 'billing' array silently does nothing.
+	foreach ( demo_address( $people[ $key ] ) as $field => $value ) {
+		$c->{"set_billing_{$field}"}( $value );
+		if ( 'email' !== $field ) {
+			$c->{"set_shipping_{$field}"}( $value );
+		}
+	}
 	$c->save();
 	$customer_ids[ $key ] = $id;
 }

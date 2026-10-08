@@ -12,6 +12,13 @@ set -euo pipefail
 sed -ri "s/^Listen 80$/Listen ${PORT}/" /etc/apache2/ports.conf
 sed -ri "s/<VirtualHost \*:80>/<VirtualHost *:${PORT}>/" /etc/apache2/sites-available/000-default.conf
 
+# Railway's runtime can leave both mpm_prefork and mpm_event enabled, and apache refuses to start with
+# "AH00534: More than one MPM loaded" (station.railway.com/questions/more-than-one-mpm-loaded-error-on-php-8-9c836859).
+# The image is innocent (locally only prefork is enabled); force exactly one MPM before starting.
+rm -f /etc/apache2/mods-enabled/mpm_event.* /etc/apache2/mods-enabled/mpm_worker.*
+a2enmod -q mpm_prefork >/dev/null 2>&1 || true
+echo "ServerName ${SITE_URL#*://}" > /etc/apache2/conf-enabled/servername.conf
+
 # Pin home/site URL and tell WordPress it is behind an https proxy, otherwise it redirects to http://.
 export WORDPRESS_CONFIG_EXTRA="
 define('WP_HOME', '${SITE_URL}');
