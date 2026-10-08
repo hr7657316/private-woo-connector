@@ -24,6 +24,15 @@ claude mcp add --transport http woocommerce https://woo-mcp-production-1b5f.up.r
              "--header", "Authorization: Bearer <token>"] } } }
 ```
 
+**ChatGPT (chatgpt.com, Plus/Pro/Team)** — its connectors cannot send custom headers (OAuth or none), so pass the
+token in the URL. *Settings → Connectors → Advanced → Developer mode → Create*: name `WooCommerce`, URL
+`https://woo-mcp-production-1b5f.up.railway.app/mcp?token=<token>`, Authentication **No authentication**.
+Then in a chat enable the connector (⋯ → Developer mode → WooCommerce) and ask *"Which orders are on hold?"*.
+
+**OpenAI API** (`gpt-6.1-sol`) — the Responses API calls remote MCP servers itself, headers included:
+`OPENAI_API_KEY=… MCP_URL=https://woo-mcp-production-1b5f.up.railway.app/mcp WOO_MCP_TOKEN=<token> uv run --extra demo demo/openai_responses.py "Which orders are on hold?"`
+(see [`demo/openai_responses.py`](../openai_responses.py)).
+
 **pydantic-ai / scripts:**
 
 ```python

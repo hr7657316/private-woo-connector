@@ -2251,6 +2251,7 @@ dependencies = [
 [package.optional-dependencies]
 demo = [
     { name = "groq" },
+    { name = "openai" },
     { name = "pydantic-ai" },
     { name = "pyyaml" },
 ]
@@ -2267,6 +2268,7 @@ requires-dist = [
     { name = "groq", marker = "extra == 'demo'", specifier = ">=1.7.0" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "mcp", extras = ["cli"], specifier = ">=2.3.0" },
+    { name = "openai", marker = "extra == 'demo'", specifier = ">=3.26.1" },
     { name = "pydantic", specifier = ">=2.14.0" },
     { name = "pydantic-ai", marker = "extra == 'demo'", specifier = ">=2.54.0" },
     { name = "pydantic-settings", specifier = ">=2.6.0" },

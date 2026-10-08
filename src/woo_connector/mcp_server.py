@@ -281,18 +281,26 @@ def build_http_app(*, allowed_hosts: list[str], bearer_token: str | None):
         # The SDK compares the raw Host header; accept each name with or without a port ("host:*").
         security = TransportSecuritySettings(allowed_hosts=[h for host in allowed_hosts for h in (host, f"{host}:*")])
     inner = server.streamable_http_app(transport_security=security)
-    expected = f"Bearer {bearer_token}".encode() if bearer_token else None
+    expected_header = f"Bearer {bearer_token}".encode() if bearer_token else None
+    expected_query = f"token={bearer_token}".encode() if bearer_token else None
+
+    def authorised(scope) -> bool:
+        if expected_header is None:
+            return True
+        if dict(scope["headers"]).get(b"authorization", b"") == expected_header:
+            return True
+        # Hosts that cannot send custom headers (ChatGPT connectors offer only OAuth or none) may put the
+        # token in the URL instead: https://host/mcp?token=…  Same secret, same check.
+        return any(part == expected_query for part in scope.get("query_string", b"").split(b"&"))
 
     async def app(scope, receive, send):
         if scope["type"] == "http":
             if scope["path"] == "/healthz":
                 return await PlainTextResponse("ok")(scope, receive, send)
-            if expected is not None:
-                supplied = dict(scope["headers"]).get(b"authorization", b"")
-                if supplied != expected:
-                    return await JSONResponse({"error": "unauthorized", "hint": "send Authorization: Bearer <WOO_MCP_TOKEN>"}, 401)(
-                        scope, receive, send
-                    )
+            if not authorised(scope):
+                return await JSONResponse(
+                    {"error": "unauthorized", "hint": "send Authorization: Bearer <WOO_MCP_TOKEN> or append ?token=<WOO_MCP_TOKEN>"}, 401
+                )(scope, receive, send)
         await inner(scope, receive, send)
 
     return app
