@@ -6,8 +6,10 @@
 
 FROM wordpress:php8.3-apache
 
-# wp-cli (the official cli image ships it as a phar; same approach here)
-RUN curl -fsSL -o /usr/local/bin/wp https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar \
+# wp-cli (the official cli image ships it as a phar; same approach here) plus the mysql client binary:
+# `wp db check` shells out to it, and the apache image does not include it (the cli image does).
+RUN apt-get update && apt-get install -y --no-install-recommends mariadb-client && rm -rf /var/lib/apt/lists/* \
+    && curl -fsSL -o /usr/local/bin/wp https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar \
     && chmod +x /usr/local/bin/wp
 
 COPY docker/seed/ /seed/
