@@ -1,0 +1,72 @@
+# Self-contained WooCommerce store with fictional data, for running the connector end-to-end.
+#   docker compose -f docker/docker-compose.yml up -d      # first boot ~2-3 min (downloads WooCommerce)
+#   docker compose -f docker/docker-compose.yml logs -f seed
+#   docker compose -f docker/docker-compose.yml down -v    # wipe everything
+#
+# Store:  http://localhost:8080        wp-admin: admin / admin
+# REST:   http://localhost:8080/wp-json/wc/v3/   (credentials in ../.env.example, read-only key)
+
+name: woo-connector
+
+services:
+  db:
+    image: mariadb:11
+    environment:
+      MARIADB_DATABASE: wordpress
+      MARIADB_USER: wordpress
+      MARIADB_PASSWORD: wordpress
+      MARIADB_ROOT_PASSWORD: root
+    volumes:
+      - db:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  wordpress:
+    image: wordpress:php8.3-apache
+    ports:
+      - "8080:80"
+    environment:
+      WORDPRESS_DB_HOST: db
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: wordpress
+      WORDPRESS_DB_NAME: wordpress
+      # Pin the home URL: OAuth1 signatures include host:port, so it must be stable.
+      WORDPRESS_CONFIG_EXTRA: |
+        define('WP_HOME', 'http://localhost:8080');
+        define('WP_SITEURL', 'http://localhost:8080');
+    volumes:
+      - wp:/var/www/html
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://localhost/wp-login.php"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  # One-shot: installs WordPress + WooCommerce, then seeds products, orders and the demo API key.
+  seed:
+    image: wordpress:cli-php8.3
+    user: "33:33"   # www-data, same owner as the files the apache image creates
+    environment:
+      WORDPRESS_DB_HOST: db
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: wordpress
+      WORDPRESS_DB_NAME: wordpress
+      WP_CLI_CACHE_DIR: /tmp/wp-cli-cache
+    volumes:
+      - wp:/var/www/html
+      - ./seed:/seed:ro
+    depends_on:
+      wordpress:
+        condition: service_healthy
+    entrypoint: ["bash", "/seed/entrypoint.sh"]
+    restart: "no"
+
+volumes:
+  db:
+  wp:

@@ -1,0 +1,4 @@
+# ~/.codex/config.toml  (OpenAI Codex CLI)
+[mcp_servers.woocommerce]
+command = "uv"
+args = ["run", "--directory", "/absolute/path/to/private-woo-connector", "woo-mcp"]

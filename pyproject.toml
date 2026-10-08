@@ -1,0 +1,38 @@
+[project]
+name = "woo-connector"
+version = "0.1.0"
+description = "Read-only WooCommerce connector + MCP server so any AI agent can query orders and inventory"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+dependencies = [
+    "httpx>=0.28.1",
+    "mcp[cli]>=2.3.0",
+    "pydantic>=2.14.0",
+    "pydantic-settings>=2.6.0",
+]
+
+[project.optional-dependencies]
+demo = [
+    "groq>=1.7.0",
+    "pydantic-ai>=2.54.0",
+]
+
+[project.scripts]
+woo-mcp = "woo_connector.mcp_server:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "respx>=0.23.1",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = ["integration: talks to the Docker WooCommerce store (skipped when it is not reachable)"]
+
+[build-system]
+requires = ["uv_build>=0.9.17,<0.10.0"]
+build-backend = "uv_build"

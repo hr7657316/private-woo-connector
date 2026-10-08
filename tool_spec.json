@@ -1,0 +1,482 @@
+{
+  "server": "woocommerce",
+  "instructions": "Read-only access to one WooCommerce store: orders and products/inventory.\nMoney values are strings in the store currency (see each order's `currency`).\nDates are ISO-8601 in UTC. Lists are paginated: check `has_more` and pass `page` to continue.\nNothing here can modify the store - there are no create/update/delete tools.\nStart with `list_order_statuses` to learn which statuses exist and how many orders are in each.\n",
+  "tools": [
+    {
+      "name": "list_orders",
+      "description": "List orders newest-first, with optional status / date-range / customer filters. Returns trimmed\n    summaries (id, number, status, total, customer, line items). Use get_order for everything else.",
+      "inputSchema": {
+        "properties": {
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Filter by status: pending, processing, on-hold, completed, cancelled, refunded, failed (or any)",
+            "title": "Status"
+          },
+          "after": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Created on/after this date or ISO datetime, e.g. 2026-10-01",
+            "title": "After"
+          },
+          "before": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Created on/before this date or ISO datetime",
+            "title": "Before"
+          },
+          "customer_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Only orders by this customer id",
+            "title": "Customer Id"
+          },
+          "page": {
+            "default": 1,
+            "description": "1-based page number",
+            "minimum": 1,
+            "title": "Page",
+            "type": "integer"
+          },
+          "per_page": {
+            "default": 20,
+            "description": "items per page (max 100)",
+            "maximum": 100,
+            "minimum": 1,
+            "title": "Per Page",
+            "type": "integer"
+          }
+        },
+        "title": "list_ordersArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "additionalProperties": true,
+        "title": "list_ordersDictOutput",
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "get_order",
+      "description": "Fetch one order by id. The summary has customer, totals, payment method, shipping city and line items.",
+      "inputSchema": {
+        "properties": {
+          "order_id": {
+            "description": "Numeric order id",
+            "title": "Order Id",
+            "type": "integer"
+          },
+          "verbose": {
+            "default": false,
+            "description": "true = raw WooCommerce payload (large); false = summary",
+            "title": "Verbose",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "order_id"
+        ],
+        "title": "get_orderArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "additionalProperties": true,
+        "title": "get_orderDictOutput",
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "search_orders",
+      "description": "Free-text search across orders (number, billing/shipping name, email, item names). WooCommerce matches\n    first and last name separately, so a full name is automatically retried as its first word; prefer the\n    customer's email or order number when you have it.",
+      "inputSchema": {
+        "properties": {
+          "query": {
+            "description": "Order number, customer name, email, or product name",
+            "minLength": 1,
+            "title": "Query",
+            "type": "string"
+          },
+          "page": {
+            "default": 1,
+            "description": "1-based page number",
+            "minimum": 1,
+            "title": "Page",
+            "type": "integer"
+          },
+          "per_page": {
+            "default": 20,
+            "description": "items per page (max 100)",
+            "maximum": 100,
+            "minimum": 1,
+            "title": "Per Page",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "search_ordersArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "additionalProperties": true,
+        "title": "search_ordersDictOutput",
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "list_order_statuses",
+      "description": "Every order status the store knows, with the number of orders currently in each. Good first call.",
+      "inputSchema": {
+        "properties": {},
+        "title": "list_order_statusesArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Result",
+            "type": "array"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "list_order_statusesOutput",
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "list_products",
+      "description": "List products with price, stock status and tracked quantity. Variable products list their variation ids.",
+      "inputSchema": {
+        "properties": {
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "publish, draft, pending, private (default: all)",
+            "title": "Status"
+          },
+          "stock_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "instock, outofstock, onbackorder",
+            "title": "Stock Status"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Category id",
+            "title": "Category"
+          },
+          "product_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "simple, variable, grouped, external",
+            "title": "Product Type"
+          },
+          "sku": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Exact SKU",
+            "title": "Sku"
+          },
+          "page": {
+            "default": 1,
+            "description": "1-based page number",
+            "minimum": 1,
+            "title": "Page",
+            "type": "integer"
+          },
+          "per_page": {
+            "default": 20,
+            "description": "items per page (max 100)",
+            "maximum": 100,
+            "minimum": 1,
+            "title": "Per Page",
+            "type": "integer"
+          }
+        },
+        "title": "list_productsArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "additionalProperties": true,
+        "title": "list_productsDictOutput",
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "get_product",
+      "description": "Fetch one product (or variation) by id.",
+      "inputSchema": {
+        "properties": {
+          "product_id": {
+            "description": "Numeric product or variation id",
+            "title": "Product Id",
+            "type": "integer"
+          },
+          "verbose": {
+            "default": false,
+            "description": "true = raw WooCommerce payload",
+            "title": "Verbose",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "product_id"
+        ],
+        "title": "get_productArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "additionalProperties": true,
+        "title": "get_productDictOutput",
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "search_products",
+      "description": "Free-text product search.",
+      "inputSchema": {
+        "properties": {
+          "query": {
+            "description": "Words from the product name, description or SKU",
+            "minLength": 1,
+            "title": "Query",
+            "type": "string"
+          },
+          "page": {
+            "default": 1,
+            "description": "1-based page number",
+            "minimum": 1,
+            "title": "Page",
+            "type": "integer"
+          },
+          "per_page": {
+            "default": 20,
+            "description": "items per page (max 100)",
+            "maximum": 100,
+            "minimum": 1,
+            "title": "Per Page",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "search_productsArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "additionalProperties": true,
+        "title": "search_productsDictOutput",
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "get_stock",
+      "description": "Current stock for one product or variation: tracked?, quantity, status, low-stock threshold, backorders.",
+      "inputSchema": {
+        "properties": {
+          "product_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Product or variation id",
+            "title": "Product Id"
+          },
+          "sku": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Exact SKU (used when product_id is not given)",
+            "title": "Sku"
+          }
+        },
+        "title": "get_stockArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "additionalProperties": true,
+        "title": "get_stockDictOutput",
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "list_low_stock",
+      "description": "Products and variations whose tracked quantity is at or below the threshold, lowest first.\n    Scans the catalogue client-side (up to 1000 products), so it is slower than the other tools.",
+      "inputSchema": {
+        "properties": {
+          "threshold": {
+            "default": 5,
+            "description": "Report items with quantity <= this",
+            "minimum": 0,
+            "title": "Threshold",
+            "type": "integer"
+          },
+          "limit": {
+            "default": 50,
+            "description": "Max items to return",
+            "maximum": 200,
+            "minimum": 1,
+            "title": "Limit",
+            "type": "integer"
+          }
+        },
+        "title": "list_low_stockArguments",
+        "type": "object"
+      },
+      "outputSchema": {
+        "properties": {
+          "result": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Result",
+            "type": "array"
+          }
+        },
+        "required": [
+          "result"
+        ],
+        "title": "list_low_stockOutput",
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      }
+    }
+  ]
+}

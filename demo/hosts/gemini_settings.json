@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "woocommerce": {
+      "command": "uv",
+      "args": ["run", "--directory", "/absolute/path/to/private-woo-connector", "woo-mcp"],
+      "timeout": 30000
+    }
+  }
+}
