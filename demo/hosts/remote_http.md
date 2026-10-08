@@ -25,7 +25,7 @@ claude mcp add --transport http woocommerce https://woo-mcp-production-1b5f.up.r
 ```
 
 **ChatGPT (chatgpt.com, Plus/Pro/Team)** — its connectors cannot send custom headers (OAuth or none), so pass the
-token in the URL. *Settings → Connectors → Advanced → Developer mode → Create*: name `WooCommerce`, URL
+token in the URL (the server must run with `WOO_MCP_ALLOW_QUERY_TOKEN=1`; the hosted demo does, and scrubs the token from its access log). *Settings → Connectors → Advanced → Developer mode → Create*: name `WooCommerce`, URL
 `https://woo-mcp-production-1b5f.up.railway.app/mcp?token=<token>`, Authentication **No authentication**.
 Then in a chat enable the connector (⋯ → Developer mode → WooCommerce) and ask *"Which orders are on hold?"*.
 

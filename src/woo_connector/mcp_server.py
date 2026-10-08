@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import re
 import sys
 import time
 from collections.abc import Awaitable, Callable
@@ -265,12 +266,16 @@ async def search_customers(
 # -- entry point ----------------------------------------------------------------------------
 
 
-def build_http_app(*, allowed_hosts: list[str], bearer_token: str | None):
+def build_http_app(*, allowed_hosts: list[str], bearer_token: str | None, allow_query_token: bool = False):
     """Starlette app for Streamable HTTP: MCP at /mcp, unauthenticated GET /healthz for platform probes.
 
     ``allowed_hosts`` feeds the SDK's DNS-rebinding protection (``*`` disables it - fine behind a platform
     proxy, never on a bare host). ``bearer_token`` is the one piece of auth the SDK does not do for us: when
     set, every request except /healthz must carry ``Authorization: Bearer <token>``.
+
+    ``allow_query_token`` additionally accepts ``?token=<token>`` for hosts that cannot send headers (ChatGPT
+    connectors offer only OAuth or none). It is opt-in because URLs end up in logs and browser history; the
+    access log is scrubbed (see ``_RedactToken``), and the proper fix for a product is OAuth on the endpoint.
     """
     from mcp.server.transport_security import TransportSecuritySettings
     from starlette.responses import JSONResponse, PlainTextResponse
@@ -289,8 +294,8 @@ def build_http_app(*, allowed_hosts: list[str], bearer_token: str | None):
             return True
         if dict(scope["headers"]).get(b"authorization", b"") == expected_header:
             return True
-        # Hosts that cannot send custom headers (ChatGPT connectors offer only OAuth or none) may put the
-        # token in the URL instead: https://host/mcp?token=…  Same secret, same check.
+        if not allow_query_token:
+            return False
         return any(part == expected_query for part in scope.get("query_string", b"").split(b"&"))
 
     async def app(scope, receive, send):
@@ -336,11 +341,31 @@ def main(argv: list[str] | None = None) -> None:
     import uvicorn
 
     token = os.environ.get("WOO_MCP_TOKEN") or None
+    allow_query = os.environ.get("WOO_MCP_ALLOW_QUERY_TOKEN", "").lower() in ("1", "true", "yes")
     hosts = [h.strip() for h in args.allowed_hosts.split(",") if h.strip()]
-    log.info("streamable-http on %s:%s path=/mcp auth=%s allowed_hosts=%s", args.host, args.port, "bearer" if token else "none", hosts)
+    log.info(
+        "streamable-http on %s:%s path=/mcp auth=%s%s allowed_hosts=%s",
+        args.host, args.port, "bearer" if token else "none", " (+query token)" if allow_query else "", hosts,
+    )
     if not token and args.host not in ("127.0.0.1", "localhost"):
         log.warning("serving on %s without WOO_MCP_TOKEN - anyone who can reach this port can read the store", args.host)
-    uvicorn.run(build_http_app(allowed_hosts=hosts, bearer_token=token), host=args.host, port=args.port, log_level="info")
+    logging.getLogger("uvicorn.access").addFilter(_RedactToken())
+    uvicorn.run(
+        build_http_app(allowed_hosts=hosts, bearer_token=token, allow_query_token=allow_query),
+        host=args.host, port=args.port, log_level="info",
+    )
+
+
+class _RedactToken(logging.Filter):
+    """Never let ``?token=…`` reach the access log (uvicorn logs the request line verbatim)."""
+
+    _pattern = re.compile(r"(token=)[^&\s\"]+")
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.args:
+            record.args = tuple(self._pattern.sub(r"\1[redacted]", a) if isinstance(a, str) else a for a in record.args)
+        record.msg = self._pattern.sub(r"\1[redacted]", str(record.msg))
+        return True
 
 
 if __name__ == "__main__":

@@ -84,7 +84,9 @@ read access with one click and no key is ever copied by a human (README → "Con
    timestamp, so WooCommerce's replay check never bites; timestamps older than 15 minutes are rejected,
    so a badly skewed clock on the agent host causes 401s.
 9. **Streamable HTTP auth is a single shared bearer token** (`WOO_MCP_TOKEN`), plus DNS-rebinding protection
-   pinned to the public hostname. Enough for a demo and for sitting behind a platform gateway (Agent Studio, a
+   pinned to the public hostname. With `WOO_MCP_ALLOW_QUERY_TOKEN=1` the same token is also accepted as
+   `?token=` for hosts that cannot send headers (ChatGPT connectors); that is off by default because URLs end up
+   in logs and history - the server scrubs `token=` from its own access log, but the right fix is OAuth on the endpoint. Enough for a demo and for sitting behind a platform gateway (Agent Studio, a
    reverse proxy with mTLS/OIDC); a multi-tenant deployment wants per-merchant tokens or OAuth on the MCP endpoint
    itself. stdio remains the default.
 10. **Token cost**: a full page of 20 order summaries is ~3k tokens (measured: 12.7 KB JSON). The agent is instructed to filter
